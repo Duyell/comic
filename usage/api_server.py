@@ -73,6 +73,24 @@ log.info(f"服务器保存目录: {_SAVE_DIR.resolve()}")
 
 # PDF 保留时间（秒），超时后自动清理
 _PDF_TTL = 1800  # 30 分钟
+_START_TIME = datetime.now()
+
+
+def _report_status():
+    """每 5 分钟打印一次服务状态"""
+    while True:
+        time.sleep(300)
+        uptime = datetime.now() - _START_TIME
+        with _tasks_lock:
+            total = len(_tasks)
+            running = sum(1 for t in _tasks.values() if t["status"] in ("running", "downloading", "converting"))
+            completed = sum(1 for t in _tasks.values() if t["status"] == "completed")
+            failed = sum(1 for t in _tasks.values() if t["status"] == "failed")
+            workers = _semaphore._value
+        log.info(
+            f"[心跳] 运行 {uptime.days}d {uptime.seconds // 3600}h "
+            f"| 总任务 {total} | 运行中 {running} | 已完成 {completed} | 失败 {failed} | 可用并发 {workers}"
+        )
 
 
 def _cleanup_old_pdfs():
@@ -89,9 +107,11 @@ def _cleanup_old_pdfs():
                     pass
 
 
-# 启动后台清理线程
+# 启动后台线程：清理过期 PDF 和心跳报告
 _cleanup_thread = threading.Thread(target=_cleanup_old_pdfs, daemon=True)
 _cleanup_thread.start()
+_heartbeat_thread = threading.Thread(target=_report_status, daemon=True)
+_heartbeat_thread.start()
 
 # 启动时清理上一次残留的临时文件
 shutil.rmtree(_TEMP_DIR, ignore_errors=True)
@@ -343,6 +363,23 @@ async def worker_info():
         "max_workers": _MAX_WORKERS,
         "running": sum(1 for t in _tasks.values() if t["status"] in ("running", "downloading", "converting")),
         "available": _semaphore._value,
+    }
+
+
+@app.get("/health")
+async def health():
+    uptime = datetime.now() - _START_TIME
+    with _tasks_lock:
+        total = len(_tasks)
+        running = sum(1 for t in _tasks.values() if t["status"] in ("running", "downloading", "converting"))
+        completed = sum(1 for t in _tasks.values() if t["status"] == "completed")
+        failed = sum(1 for t in _tasks.values() if t["status"] == "failed")
+    return {
+        "status": "ok",
+        "uptime_seconds": int(uptime.total_seconds()),
+        "uptime_human": f"{uptime.days}d {uptime.seconds // 3600}h {(uptime.seconds % 3600) // 60}m",
+        "tasks": {"total": total, "running": running, "completed": completed, "failed": failed},
+        "workers": {"max": _MAX_WORKERS, "available": _semaphore._value},
     }
 
 
