@@ -1,0 +1,37 @@
+# JMComic API 服务专用配置
+# 使用网页端客户端 + V2Ray 代理
+
+dir_rule:
+  base_dir: ./jmcomic_downloads  # 会被 api_server.py 覆盖为临时目录，不影响，仅作备用
+
+client:
+  impl: html
+  retry_times: 5
+  domain:
+    html:
+      - 18comic.vip
+      - 18comic.ink
+      - jmcomic-zzz.one
+      - jmcomic-zzz.org
+      - jm18c-oec.cc
+      - jm18c-fuyu.cc
+      - jm18c-fuyu.me
+  postman:
+    type: curl_cffi
+    meta_data:
+      impersonate: chrome
+      timeout: 30
+      proxies:
+        http: socks5h://127.0.0.1:10808
+        https: socks5h://127.0.0.1:10808
+
+download:
+  cache: true
+  image:
+    decode: true
+    suffix: null
+  threading:
+    image: 5
+    photo: 3
+
+plugins: {}

@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>JMComic 下载器</title>
+<style>
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, "Microsoft YaHei", sans-serif;
+    background: #f5f5f5; display: flex; justify-content: center;
+    padding: 40px 16px;
+  }
+  .card {
+    background: #fff; border-radius: 12px; box-shadow: 0 2px 12px rgba(0,0,0,.08);
+    padding: 32px; width: 100%; max-width: 560px;
+  }
+  h1 { font-size: 22px; margin-bottom: 24px; text-align: center; }
+  .field { margin-bottom: 16px; }
+  label { display: block; font-size: 14px; font-weight: 600; margin-bottom: 4px; color: #333; }
+  input, select {
+    width: 100%; padding: 10px 12px; border: 1px solid #d9d9d9; border-radius: 8px;
+    font-size: 15px; outline: none; transition: border .2s;
+  }
+  input:focus, select:focus { border-color: #1677ff; }
+  .row { display: flex; gap: 12px; }
+  .row .field { flex: 1; }
+  .checkbox-row {
+    display: flex; align-items: center; gap: 8px;
+    padding: 10px 0; margin-bottom: 16px;
+  }
+  .checkbox-row input[type="checkbox"] { width: 18px; height: 18px; cursor: pointer; }
+  .checkbox-row label { margin: 0; cursor: pointer; }
+  button {
+    width: 100%; padding: 11px; border: none; border-radius: 8px;
+    font-size: 16px; font-weight: 600; cursor: pointer;
+    background: #1677ff; color: #fff; transition: background .2s;
+  }
+  button:hover { background: #4096ff; }
+  button:disabled { background: #a0a0a0; cursor: not-allowed; }
+  .result {
+    margin-top: 20px; padding: 14px; border-radius: 8px;
+    font-size: 14px; display: none; word-break: break-all;
+  }
+  .result.success { display: block; background: #f6ffed; border: 1px solid #b7eb8f; color: #389e0d; }
+  .result.error { display: block; background: #fff2f0; border: 1px solid #ffccc7; color: #cf1322; }
+  .result.running { display: block; background: #fffbe6; border: 1px solid #ffe58f; color: #ad8b00; }
+  .result.downloading { display: block; background: #e6f7ff; border: 1px solid #91d5ff; color: #096dd9; }
+  .result.zipping { display: block; background: #f9f0ff; border: 1px solid #d3adf7; color: #531dab; }
+
+  .download-btn {
+    display: inline-block; margin-top: 8px; padding: 8px 20px;
+    background: #52c41a; color: #fff; border-radius: 6px;
+    text-decoration: none; font-weight: 600; font-size: 15px;
+  }
+
+  .tasks { margin-top: 24px; }
+  .tasks h2 { font-size: 16px; margin-bottom: 8px; }
+  .task-item {
+    padding: 8px 12px; border-radius: 6px; font-size: 13px; margin-bottom: 4px;
+  }
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 4px;
+    font-size: 12px; font-weight: 600;
+  }
+  .badge.completed { background: #b7eb8f; color: #389e0d; }
+  .badge.failed { background: #ffccc7; color: #cf1322; }
+  .badge.running,
+  .badge.downloading,
+  .badge.converting { background: #ffe58f; color: #ad8b00; }
+  .task-error { color: #cf1322; font-size: 12px; margin-top: 2px; }
+  .no-tasks { color: #999; font-size: 14px; text-align: center; padding: 16px; }
+  .task-dl-link { margin-left: 8px; font-size: 12px; }
+  .task-header { display: flex; justify-content: space-between; align-items: center; }
+</style>
+</head>
+<body>
+<div class="card">
+  <h1>JMComic 下载器</h1>
+
+  <form id="downloadForm">
+    <div class="field">
+      <label for="id">漫画 ID</label>
+      <input type="text" id="id" placeholder="例如: 438516" required>
+    </div>
+    <div class="row">
+      <div class="field">
+        <label for="type">类型</label>
+        <select id="type">
+          <option value="album">本子 (album)</option>
+          <option value="photo">章节 (photo)</option>
+        </select>
+      </div>
+    </div>
+    <div class="checkbox-row">
+      <input type="checkbox" id="browser" checked>
+      <label for="browser">下载到我自己的电脑（合并为 PDF）</label>
+    </div>
+    <button type="submit" id="submitBtn">开始下载</button>
+  </form>
+
+  <div id="result" class="result"></div>
+
+  <div class="tasks">
+    <h2>任务列表</h2>
+    <div id="taskList"><div class="no-tasks">暂无任务</div></div>
+  </div>
+</div>
+
+<script>
+const API_BASE = '';
+
+const form = document.getElementById('downloadForm');
+const submitBtn = document.getElementById('submitBtn');
+const result = document.getElementById('result');
+const taskList = document.getElementById('taskList');
+
+form.addEventListener('submit', async (e) => {
+  e.preventDefault();
+  submitBtn.disabled = true;
+  result.className = 'result';
+  result.style.display = 'none';
+
+  try {
+    const resp = await fetch(`${API_BASE}/download`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        id: document.getElementById('id').value.trim(),
+        type: document.getElementById('type').value,
+        browser: document.getElementById('browser').checked,
+      }),
+    });
+    const data = await resp.json();
+    if (!resp.ok) throw new Error(data.detail || '请求失败');
+
+    result.className = 'result success';
+    result.style.display = 'block';
+
+    if (data.status === 'already_running') {
+      result.innerHTML = `<strong>该 ID 正在下载中</strong><br>任务编号: <code>${data.task_id}</code>`;
+    } else {
+      const mode = data.browser ? '下载图片 → 合并为 PDF → 下载到本机' : '保存到服务器硬盘';
+      result.innerHTML = `<strong>任务已提交</strong><br>ID: ${data.id}<br>模式: ${mode}<br>任务编号: <code>${data.task_id}</code>`;
+      pollTask(data.task_id);
+    }
+    refreshTasks();
+  } catch (err) {
+    result.className = 'result error';
+    result.style.display = 'block';
+    result.textContent = '提交失败: ' + err.message;
+  } finally {
+    submitBtn.disabled = false;
+  }
+});
+
+function pollTask(taskId) {
+  let count = 0;
+  const max = 300;
+  const interval = setInterval(async () => {
+    count++;
+    if (count > max) { clearInterval(interval); return; }
+    try {
+      const resp = await fetch(`${API_BASE}/status/${taskId}`);
+      const data = await resp.json();
+      if (!resp.ok) { clearInterval(interval); return; }
+
+      // 显示中间状态
+      if (data.status === 'running' || data.status === 'downloading') {
+        showStatus(data.status, '正在下载中，请稍候...');
+      } else if (data.status === 'converting') {
+        showStatus(data.status, '下载完成，正在合并为 PDF...');
+      } else if (data.status === 'completed') {
+        clearInterval(interval);
+        refreshTasks();
+        if (data.download_url) {
+          showCompletedWithDownload(taskId, data);
+        } else if (data.saved_path) {
+          showStatus('success', `下载完成，PDF 已保存到服务器`);
+        } else {
+          showStatus('success', '下载完成，已保存到服务器硬盘');
+        }
+      } else if (data.status === 'failed') {
+        clearInterval(interval);
+        refreshTasks();
+        result.className = 'result error';
+        result.style.display = 'block';
+        result.innerHTML = `<strong>下载失败</strong><br>错误: ${data.error || '未知错误'}`;
+      }
+    } catch { clearInterval(interval); }
+  }, 1000);
+}
+
+function showStatus(className, text) {
+  result.className = `result ${className}`;
+  result.style.display = 'block';
+  result.textContent = text;
+}
+
+function showCompletedWithDownload(taskId, data) {
+  result.className = 'result success';
+  result.style.display = 'block';
+  const size = data.file_size ? ` (${(data.file_size / 1024 / 1024).toFixed(1)} MB)` : '';
+  result.innerHTML = `
+    <strong>打包完成${size}</strong><br>
+    <a class="download-btn" href="${API_BASE}/download/${taskId}" download>
+      点击下载 PDF
+    </a>
+    <br><small>下载后文件会自动从服务器删除</small>
+  `;
+}
+
+async function refreshTasks() {
+  try {
+    const resp = await fetch(`${API_BASE}/tasks`);
+    const data = await resp.json();
+    const entries = Object.entries(data);
+    if (entries.length === 0) {
+      taskList.innerHTML = '<div class="no-tasks">暂无任务</div>';
+      return;
+    }
+    taskList.innerHTML = entries.reverse().map(([tid, info]) => {
+      const status = info.status || 'unknown';
+      const errorHtml = info.error ? `<div class="task-error">${info.error}</div>` : '';
+      const dlLink = info.download_url
+        ? `<a class="task-dl-link" href="${API_BASE}${info.download_url}">下载 PDF</a>`
+        : '';
+      return `<div class="task-item">
+        <div class="task-header">
+          <span><strong>${info.id}</strong> (${info.type}) ${dlLink}</span>
+          <span class="badge ${status}">${status}</span>
+        </div>
+        ${errorHtml}
+      </div>`;
+    }).join('');
+  } catch { /* ignore */ }
+}
+
+refreshTasks();
+setInterval(refreshTasks, 5000);
+</script>
+</body>
+</html>
